@@ -45,7 +45,14 @@ androidmbt : $(OBJS)
 	$(MKDIR) $(OUTDIR)/$(PLATFORM)
 	$(CC) -o $(OUTDIR)/$(PLATFORM)/mbt $^
 
-.PHONY: clean ndkcheck
+# UART flow control helpers in tools/, for Android (see tools/README.md)
+TOOLS = cts_watch rts_ctl uart_watch
+
+tools: ndkcheck
+	$(MKDIR) $(OUTDIR)/android
+	$(foreach t,$(TOOLS),$(NDK_CC) -O2 -Wall -o $(OUTDIR)/android/$(t) tools/$(t).c &&) true
+
+.PHONY: clean ndkcheck tools
 
 clean :  
 	@echo "Clean All"
