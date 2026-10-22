@@ -46,6 +46,17 @@
    During an HCD download each record's Command Complete is read and checked;
    mbt exits with status 6 when a record fails.
 
+   Why each record is checked: the upstream code sent all records without
+   reading any reply. Measured on an MT8786 host:
+   - CYW55560, HCD with 615 records: the replies fill the host's 4096-byte
+     UART receive buffer after about 584 records, flow control stops the
+     controller, and the download stalls.
+   - CYW54591, HCD with 423 records ("download --minidriver"): mbt reports
+     "Completed successfully", but the reply it takes for the final HCI
+     Reset is a leftover Write_RAM reply. The controller then answers every
+     command with a vendor event (0xFF) and garbled bytes. With the check, the
+     same HCD loads and the controller works.
+
    Which flow control setting to use: after the last record the controller
    starts the downloaded image and deasserts CTS meanwhile. What happens to
    the HCI Reset that mbt sends next depends on the download mode:
