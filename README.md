@@ -45,6 +45,22 @@
    Set MBT_FLOW_CONTROL=noflow (or 0) to turn RTS/CTS flow control off.
    During an HCD download each record's Command Complete is read and checked;
    mbt exits with status 6 when a record fails.
+
+   Which flow control setting to use: after the last record the controller
+   starts the downloaded image and deasserts CTS meanwhile. What happens to
+   the HCI Reset that mbt sends next depends on the download mode:
+   - "download --minidriver" (used for CYW54591) sends the Reset right after
+     the last record. Keep flow control on (the default): the Reset waits
+     until CTS is back and is answered at once. With noflow it is lost and
+     mbt resends it 4 s later.
+   - "download --autobaud" (used for CYW55560) waits 1 s, then sends the
+     Reset. When the image does not start, CTS can stay deasserted for
+     several seconds (4.5 s with one CYW55560 test HCD). With flow control on,
+     on our MT8786 host a Reset written while CTS was deasserted was never
+     sent, even after CTS came back, and mbt hung. Use noflow in that case;
+     mbt resends the Reset every 4 s until the controller answers. With an
+     image that starts normally, CTS comes back within about 0.3 s and both
+     settings work.
 ##Binary execute file in Release folder and scripts folder
 
 ### Folder Structure
