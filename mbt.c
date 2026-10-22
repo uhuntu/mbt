@@ -59,7 +59,8 @@ ription:   The manufacturing Bluetooth test tool (MBT) is used to test and verif
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
-#include <sys/termios.h>
+#include <termios.h>
+#include <unistd.h>
 #include <pthread.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -953,7 +954,7 @@ static void execute_input_command(char *input)
 
     read_event(fd_transport, buffer);
 
-    return 1;
+    return;
 }
 
 static void execute_set_event_filter(void)

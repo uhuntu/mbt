@@ -34,6 +34,13 @@
     make clean
     make arm64
    ```
+### for Android (arm64)
+   ```
+    make clean
+    ANDROID_NDK_ROOT=<NDK directory> make android
+   ```
+   The binary is Release/android/mbt. Android uses Bionic instead of glibc,
+   so the arm64 binary above does not run there.
 ##Binary execute file in Release folder and scripts folder
 
 ### Folder Structure

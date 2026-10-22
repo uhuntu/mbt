@@ -71,7 +71,9 @@ typedef unsigned char   BOOL;
 
 #define MBT_VERSION_STRING "ver 1.32.0 (MBT for Linux)"
 #define MBT_MAX_TX_POWER 3 // 3dBm max
+#ifndef CRTSCTS
 #define CRTSCTS 020000000000 /*flow control*/
+#endif
 #define COMPARE_STRING(x,y)     strcmp(x,y)
 
 /* transport types */

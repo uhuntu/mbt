@@ -6,6 +6,15 @@ arm64: CC=aarch64-linux-gnu-gcc
 arm64: PLATFORM=arm64
 arm64: aarch64mbt
 
+# Android (Bionic) arm64, built with the NDK clang. Set ANDROID_NDK_ROOT to
+# the NDK directory, for example ~/Android/Sdk/ndk/26.1.10909125.
+ANDROID_API ?= 30
+NDK_CC = $(ANDROID_NDK_ROOT)/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android$(ANDROID_API)-clang
+
+android: CC=$(NDK_CC)
+android: PLATFORM=android
+android: ndkcheck androidmbt
+
 CFLAGS= -Wall -g
 
 MKDIR= mkdir -p
@@ -29,7 +38,14 @@ aarch64mbt : $(OBJS)
 	@cp $(OUTDIR)/$(PLATFORM)/mbt ./cyw5557x/scripts_for_rpicm4/
 	@cp $(OUTDIR)/$(PLATFORM)/mbt ./cyw5557x/scripts_for_imx8/
 
-.PHONY: clean
+ndkcheck :
+	@test -x "$(NDK_CC)" || { echo "NDK clang not found: $(NDK_CC) (set ANDROID_NDK_ROOT)"; exit 1; }
+
+androidmbt : $(OBJS)
+	$(MKDIR) $(OUTDIR)/$(PLATFORM)
+	$(CC) -o $(OUTDIR)/$(PLATFORM)/mbt $^
+
+.PHONY: clean ndkcheck
 
 clean :  
 	@echo "Clean All"
