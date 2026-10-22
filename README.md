@@ -41,6 +41,10 @@
    ```
    The binary is Release/android/mbt. Android uses Bionic instead of glibc,
    so the arm64 binary above does not run there.
+
+   Set MBT_FLOW_CONTROL=noflow (or 0) to turn RTS/CTS flow control off.
+   During an HCD download each record's Command Complete is read and checked;
+   mbt exits with status 6 when a record fails.
 ##Binary execute file in Release folder and scripts folder
 
 ### Folder Structure

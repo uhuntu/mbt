@@ -109,6 +109,20 @@ char* mbt_transport = NULL;
 UINT8 mbt_transport_type = -1;
 UINT32 download_baudrate = 115200;
 
+static void configure_flow_control(void)
+{
+    const char *flow = getenv("MBT_FLOW_CONTROL");
+
+    if (flow != NULL && (strcmp(flow, "0") == 0 || strcasecmp(flow, "noflow") == 0))
+    {
+        termios.c_cflag &= ~CRTSCTS;
+    }
+    else
+    {
+        termios.c_cflag |= CRTSCTS;
+    }
+}
+
 UINT8 hci_reset[] = { 0x01, 0x03, 0x0c, 0x00 };
 UINT8 enter_download_mode[] = {0x01, 0xED, 0xFF, 0x14, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
     			0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xED, 0xFF, 0x01, 0x00};
@@ -227,7 +241,7 @@ void init_uart(void)
     termios.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
     termios.c_cflag &= ~(CSIZE | PARENB);
     termios.c_cflag |= CS8;
-    termios.c_cflag |= CRTSCTS;
+    configure_flow_control();
     //fprintf(stderr, "CTS %d\n", CRTSCTS);
     tcsetattr(fd_transport, TCSANOW, &termios);
     tcflush(fd_transport, TCIOFLUSH);
@@ -251,7 +265,7 @@ void init_uart_change_baudrate(void)
     termios.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
     termios.c_cflag &= ~(CSIZE | PARENB);
     termios.c_cflag |= CS8;
-    termios.c_cflag |= CRTSCTS;
+    configure_flow_control();
     //fprintf(stderr, "CTS %d\n", CRTSCTS);
     tcsetattr(fd_transport, TCSANOW, &termios);
     tcflush(fd_transport, TCIOFLUSH);
@@ -275,7 +289,7 @@ void init_uart_change_baudrate3M(void)
     termios.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
     termios.c_cflag &= ~(CSIZE | PARENB);
     termios.c_cflag |= CS8;
-    termios.c_cflag |= CRTSCTS;
+    configure_flow_control();
     //fprintf(stderr, "CTS %d\n", CRTSCTS);
     tcsetattr(fd_transport, TCSANOW, &termios);
     tcflush(fd_transport, TCIOFLUSH);
@@ -299,7 +313,7 @@ void cts_low_init(void)    //20220317 pull CTS to LOW //with Chuck Wang
     termios.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
     termios.c_cflag &= ~(CSIZE | PARENB);
     termios.c_cflag |= CS8;
-    termios.c_cflag |= CRTSCTS;
+    configure_flow_control();
     printf("Reset the chip to autobaud state and press ENTER key!\n");
     getchar();
     tcsetattr(fd_transport, TCSANOW, &termios);
@@ -664,8 +678,14 @@ void proc_patchram(bool sendMini)
 
 	debug = 0;
         hci_send_cmd(buffer, len + 4);
-        //read_event(fd_transport, buffer);
+        int event_len = read_event(fd_transport, buffer);
 	debug = 1;
+        if (event_len < 7 || buffer[0] != 0x04 || buffer[1] != 0x0e || buffer[event_len - 1] != 0x00)
+        {
+            fprintf(stderr, "\nERROR: HCD record failed or returned an unexpected event:\n");
+            dump(buffer, event_len);
+            exit(6);
+        }
         dot_print++;
 	fprintf(stderr,".", len);
 
