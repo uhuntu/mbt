@@ -46,7 +46,7 @@ androidmbt : $(OBJS)
 	$(CC) -o $(OUTDIR)/$(PLATFORM)/mbt $^
 
 # UART flow control helpers in tools/, for Android (see tools/README.md)
-TOOLS = cts_watch rts_ctl uart_watch
+TOOLS = cts_watch rts_ctl uart_watch gpio_line
 
 tools: ndkcheck
 	$(MKDIR) $(OUTDIR)/android
