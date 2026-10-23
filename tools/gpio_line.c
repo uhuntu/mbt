@@ -2,6 +2,8 @@
  * Show or drive one GPIO line through the GPIO character device (v2 uapi).
  * Usage:
  *   gpio_line <chip> <line> info
+ *   gpio_line <chip> <line> get [count] [ms]       read the line as an input
+ *                                                  (count times, every ms), then release it
  *   gpio_line <chip> <line> set <0|1>              drive the line, then release it
  *   gpio_line <chip> <line> pulse <0|1> <ms>       drive to the value for ms, then
  *                                                  back to the other value, release
@@ -62,6 +64,33 @@ static int request_out(int fd, unsigned line, int value)
     return req.fd;
 }
 
+static int request_in(int fd, unsigned line)
+{
+    struct gpio_v2_line_request req;
+
+    memset(&req, 0, sizeof(req));
+    req.offsets[0] = line;
+    req.num_lines = 1;
+    strcpy(req.consumer, "gpio_line");
+    req.config.flags = GPIO_V2_LINE_FLAG_INPUT;
+    if (ioctl(fd, GPIO_V2_GET_LINE_IOCTL, &req) < 0) {
+        perror("GPIO_V2_GET_LINE");
+        return -1;
+    }
+    return req.fd;
+}
+
+static int get(int lfd)
+{
+    struct gpio_v2_line_values v = { .bits = 0, .mask = 1 };
+
+    if (ioctl(lfd, GPIO_V2_LINE_GET_VALUES_IOCTL, &v) < 0) {
+        perror("GPIO_V2_LINE_GET_VALUES");
+        return -1;
+    }
+    return (int) (v.bits & 1);
+}
+
 static int set(int lfd, int value)
 {
     struct gpio_v2_line_values v = { .bits = value ? 1 : 0, .mask = 1 };
@@ -80,7 +109,7 @@ int main(int argc, char **argv)
     double t0;
 
     if (argc < 4) {
-        fprintf(stderr, "usage: %s chip line info | set <0|1> | pulse <0|1> <ms>\n", argv[0]);
+        fprintf(stderr, "usage: %s chip line info | get [count] [ms] | set <0|1> | pulse <0|1> <ms>\n", argv[0]);
         return 1;
     }
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -92,7 +121,19 @@ int main(int argc, char **argv)
     if (info(fd, line) < 0)
         return 1;
 
-    if (!strcmp(argv[3], "set") && argc > 4) {
+    if (!strcmp(argv[3], "get")) {
+        int i, n = argc > 4 ? atoi(argv[4]) : 1, ms = argc > 5 ? atoi(argv[5]) : 100;
+
+        if ((lfd = request_in(fd, line)) < 0)
+            return 1;
+        t0 = now_ms();
+        for (i = 0; i < n; i++) {
+            if (i)
+                usleep(ms * 1000);
+            printf("%8.1f line %u = %d\n", now_ms() - t0, line, get(lfd));
+        }
+        close(lfd);
+    } else if (!strcmp(argv[3], "set") && argc > 4) {
         value = atoi(argv[4]);
         if ((lfd = request_out(fd, line, value)) < 0)
             return 1;
