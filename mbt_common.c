@@ -37,8 +37,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
+#include <stdbool.h>
 #include "mbt.h"
+
+
+/******************************************************
+extern
+ ******************************************************/
+extern bool readEvent;
 
 /******************************************************
  *             Function Definitions
@@ -83,6 +89,24 @@ void print_usage_reset(BOOL full)
     if (!full) return;
     printf ("ex)\n");
     printf("$ ./mbt reset\n");
+    printf("\n");
+}
+
+void print_usage_access_otp_20703A1_write(BOOL full)
+{
+    printf("Command: mbt access_otp_20703A1_write\n");
+    if (!full) return;
+    printf ("ex)\n");
+    printf("$ ./mbt access_otp_20703A1_write 001122334455 00000000000000000000000000000000 0000 0000 00 00 00 00 00 00 0000 00 00 00 00 0000 00\n");
+    printf("\n");
+}
+
+void print_usage_access_otp_20703A1_read(BOOL full)
+{
+    printf("Command: mbt access_otp_20703A1_read\n");
+    if (!full) return;
+    printf ("ex)\n");
+    printf("$ ./mbt access_otp_20703A1_read \n");
     printf("\n");
 }
 
@@ -149,6 +173,7 @@ void print_usage_read_bdaddr(BOOL full)
     printf("$ ./mbt download fw.hcd --minidriver\n");
     printf("$ ./mbt download fw.hcd --autobaud3M\n");
     printf("$ ./mbt download fw.hcd --soft3M\n");
+    printf("$ add --message at the end of command show send and receive bytes\n");
     printf("\n");
 }
 
@@ -272,6 +297,15 @@ void print_usage_tx_test(BOOL full)
     printf ("$ ./mbt tx_test beefbeef0011 2402 3 1 3 0 1 0 (1: -4dBm in steps)\n");
     printf ("$ ./mbt tx_test beefbeef0011 2402 3 1 3 0 8 3 (8: dBm, 3: 3dBm)\n");
     printf ("$ ./mbt tx_test beefbeef0011 2402 3 1 3 0 9 0 (9: Power Table, 0: index 0)\n");
+    printf("\n");
+}
+
+void print_usage_end_tx_test(BOOL full)
+{
+    printf("Command: mbt end_tx_test\n");
+    if (!full) return;
+    printf ("ex)\n");
+    printf("$ ./mbt end_tx_test\n");
     printf("\n");
 }
 
@@ -443,6 +477,8 @@ void print_usage_mbt_commands(BOOL full)
     printf("[mbt version: %s]\n", MBT_VERSION_STRING);
     print_usage_help(full);
     print_usage_reset(full);
+    print_usage_access_otp_20703A1_write(full);
+    print_usage_access_otp_20703A1_read(full);
     print_usage_input_command(full);
     print_usage_download_minidriver(full);
     print_usage_download(full);
@@ -454,6 +490,7 @@ void print_usage_mbt_commands(BOOL full)
     print_usage_set_tx_frequency_arm(full);
     print_usage_receive_only_test(full);
     print_usage_tx_test(full);
+    print_usage_end_tx_test(full);
     print_usage_rx_test(full);
     print_usage_loopback_mode(full);
     print_usage_read_name(full);
@@ -496,6 +533,22 @@ int parse_input_command_args(int argc, char **argv)
         /*reset command but arg error - display full reset command usage*/
         print_usage_reset(TRUE);
     }
+    else if(COMPARE_STRING(argv[1],"access_otp_20703A1_read")==0)
+    {
+        if( argc == 2 )
+        {
+            return COMMAND_ACCESS_OTP_20703A1_READ;
+        }
+        print_usage_access_otp_20703A1_read(TRUE);
+    }
+    else if(COMPARE_STRING(argv[1],"access_otp_20703A1_write")==0)
+    {
+        if( argc == 19 )
+        {
+            return COMMAND_ACCESS_OTP_20703A1_WRITE;
+        }
+        print_usage_access_otp_20703A1_write(TRUE);
+    }
     else if (COMPARE_STRING(argv[1],"download_minidriver")==0)
     {
         if( argc == 2 )
@@ -522,6 +575,11 @@ int parse_input_command_args(int argc, char **argv)
     }
     else if(COMPARE_STRING(argv[1],"download")==0)
     {
+        if (COMPARE_STRING(argv[argc-1], "--message") == 0)
+        {
+            readEvent = true;
+            argc--;
+        }
         if (argc == 3)
         {
             return COMMAND_DOWNLOAD;
@@ -581,7 +639,6 @@ int parse_input_command_args(int argc, char **argv)
             }
             return COMMAND_DOWNLOAD_NO_RESET;
         }
-
         print_usage_download(TRUE);
     }
     else if(COMPARE_STRING(argv[1],"write_bdaddr")==0)
@@ -698,7 +755,7 @@ int parse_input_command_args(int argc, char **argv)
             if(strlen(argv[2]) == 12)
             {
                 int frequency = atoi(argv[3]);
-                if ((frequency == 0) || (frequency >= 2402) && (frequency <= 2480))
+                if ((frequency == 0) || ((frequency >= 2402) && (frequency <= 2480)))
                 {
                     int modulation_type = atoi(argv[4]);
                     if (((modulation_type >= 1) && (modulation_type <= 4)) || (modulation_type == 9))
@@ -738,6 +795,10 @@ int parse_input_command_args(int argc, char **argv)
         }
         print_usage_tx_test(TRUE);
     }
+    else if(COMPARE_STRING(argv[1], "end_tx_test")==0)
+    {
+        return COMMAND_END_TX_TEST;
+	}
     else if(COMPARE_STRING(argv[1],"rx_test")==0)
     {
         if (argc == 8)

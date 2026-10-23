@@ -49,7 +49,6 @@ ription:   The manufacturing Bluetooth test tool (MBT) is used to test and verif
  *
  *                 ./mbt help
  *
- * Version:    1.32
  *****************************************************************************/
 
 #include <stdio.h>
@@ -59,10 +58,12 @@ ription:   The manufacturing Bluetooth test tool (MBT) is used to test and verif
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
-#include <sys/termios.h>
+#include <termios.h>
 #include <pthread.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <unistd.h>
+#include <ctype.h>
 
 #include "mbt.h"
 
@@ -84,11 +85,14 @@ static void execute_le_transmitter_test(UINT16 tx_frequency, UINT16 length, UINT
 static void execute_set_tx_frequency_arm(BOOL carrier_on, int tx_frequency, int tx_mode, int tx_modulation_type, int tx_power_select, int tx_power_dBm_index);
 static void execute_receive_only(UINT16 rx_frequency);
 static void execute_radio_tx_test(char *bdaddr, int frequency, int modulation_type, int logical_channel, int packet_type, int packet_length, int tx_power_select, int tx_power_dBm_index);
+static void execute_end_radio_tx_test(void);
 static void stop_rx_test(int sig);
 static void execute_radio_rx_test(char *bdaddr, int frequency, int modulation_type, int logical_channel, int packet_type, int packet_length);
 static void execute_otp_write_word(char *offset, char *data);
 static void execute_input_command(char *input);
 static void execute_download_minidriver(void);
+static void execute_access_otp_20703A1_write(char *bd_addr, char *license_key, char *usb_pid, char *usb_vid, char *usb_desc_config, char *led_config, char *freq_trim, char *output_power_trim, char *radio_disable_config, char *audio_config, char *xial_freq, char *misc_config1, char *misc_config2, char *clb_sh_bg_ctl_0bg_rcal_trim, char *fab_config, char *lpm_settings, char *usb_ctrl_flag);
+static void execute_access_otp_20703A1_read(void);
 static void wait_for_auto_baud(void);
 static void execute_update_baudrate(UINT32 baudrate);
 /******************************************************
@@ -101,8 +105,9 @@ int fd_hcdfile       = -1;
 FILE *fp_hexfile = NULL;
 FILE *logfile = NULL;
 UINT8 is_hex = 0;
-int debug    = 1;
+bool debug   = TRUE;
 int check_auto_baud = 1;
+bool readEvent = false;
 UINT8 buffer[1024];
 char* mbt_transport = NULL;
 UINT8 mbt_transport_type = -1;
@@ -135,48 +140,16 @@ static int get_environment_variables()
 
     printf("[MBT_TRANSPORT: %s]\n", mbt_transport);
     /*get transport type, UART or USB*/
-    if (strncmp(mbt_transport, "/dev/ttyUSB", strlen("/dev/ttyUSB")) == 0)
-    {
-        mbt_transport_type = TRANSPORT_TYPE_UART;
-    }
-    else if (strncmp(mbt_transport, "/dev/ttymxc", strlen("/dev/ttymxc")) == 0)
-    {
-        mbt_transport_type = TRANSPORT_TYPE_UART;
-    }
-    else if (strncmp(mbt_transport, "/dev/btusb", strlen("/dev/btusb")) == 0)
+    
+    if (strncmp(mbt_transport, "/dev/btusb", strlen("/dev/btusb")) == 0)
     {
         mbt_transport_type = TRANSPORT_TYPE_USB;
     }
-    else if (strncmp(mbt_transport, "/dev/ttySDIO", strlen("/dev/ttySDIO")) == 0)
-    {
-        mbt_transport_type = TRANSPORT_TYPE_UART;
-    }
-    else if (strncmp(mbt_transport, "/dev/ttyGS", strlen("/dev/ttyGS")) == 0)
-    {
-        mbt_transport_type = TRANSPORT_TYPE_UART;
-    }
-    else if (strncmp(mbt_transport, "/dev/ttyTHS", strlen("/dev/ttyTHS")) == 0)
-    {
-        mbt_transport_type = TRANSPORT_TYPE_UART;
-    }
-    else if (strncmp(mbt_transport, "/dev/ttyACM", strlen("/dev/ttyACM")) == 0)
-    {
-        mbt_transport_type = TRANSPORT_TYPE_UART;
-    }
-    else if (strncmp(mbt_transport, "/dev/ttyS", strlen("/dev/ttyS")) == 0)
-    {
-        mbt_transport_type = TRANSPORT_TYPE_UART;
-    }
-    else if (strncmp(mbt_transport, "/dev/ttyAMA", strlen("/dev/ttyAMA")) == 0)
-    {
-        mbt_transport_type = TRANSPORT_TYPE_UART;
-    }
     else
     {
-        /* tranport been set is not supported*/
-         return MBT_TRANSPORT_ERROR;
-
+        mbt_transport_type = TRANSPORT_TYPE_UART;
     }
+    
     return MBT_SUCCESS;
 }
 
@@ -184,7 +157,7 @@ int parse_patchram(char *optarg)
 {
     char *p;
     is_hex = 0;
-    fprintf(stderr, "Enter parse_patchram \n");
+    printf("Enter parse_patchram\n");
     if (!(p = strrchr(optarg, '.'))) {
         fprintf(stderr, "file %s not an HCD/hex file\n", optarg);
         exit(3);
@@ -286,7 +259,7 @@ void init_uart_change_baudrate3M(void)
     tcsetattr(fd_transport, TCSANOW, &termios);
 }
 
-void cts_low_init(void)    //20220317 pull CTS to LOW //with Chuck Wang
+void cts_low_init(bool waitReset)
 {
 
     tcflush(fd_transport, TCIOFLUSH);
@@ -299,8 +272,11 @@ void cts_low_init(void)    //20220317 pull CTS to LOW //with Chuck Wang
     termios.c_cflag &= ~(CSIZE | PARENB);
     termios.c_cflag |= CS8;
     termios.c_cflag |= CRTSCTS;
-    printf("Reset the chip to autobaud state and press ENTER key!\n");
-    getchar();
+    if(waitReset == true)
+    {
+        printf("Reset the chip to autobaud state and press ENTER key!\n");
+        getchar();
+    }
     tcsetattr(fd_transport, TCSANOW, &termios);
     tcflush(fd_transport, TCIOFLUSH);
     //tcsetattr(fd_transport, TCSANOW, &termios);
@@ -379,7 +355,7 @@ int read_event(int fd, UINT8 *buffer)
 
     if (logfile)
     {
-        char str[100];
+        char str[100] = {0};
     	int slen = sprintf(str,"rx: (%d bytes)\n", count);
         fwrite(str,slen,1,logfile);
         for(i=0;i<count;i++)
@@ -527,24 +503,116 @@ void send_buffer_data(ssize_t data_len, unsigned int dest_addr)
     //read_event(fd_transport, buffer);
 }
 
+/*******************************************************************************
+* Function Name: is_str_valid_hex
+********************************************************************************
+* Summary:
+*   check if str is only {1,2,3,4 ... 9, a/A, b/B, c/C, d/D, e/E, f/F}
+*
+* Parameters:
+*   char *str
+*
+* Return:
+*   bool
+*
+*******************************************************************************/
+static bool is_str_valid_hex(char *str)
+{
+    for(int i = 0; i < strlen(str); i++)
+    {
+        char ch = toupper(str[i]);
+        if ((ch < '0' || ch > '9') && (ch < 'A' || ch > 'F'))
+        {
+            return FALSE;
+        }
+    }
+    return TRUE;
+}
+
+/*******************************************************************************
+* Function Name: check_otp_info
+********************************************************************************
+* Summary:
+*   check if sscanf return value is correct
+*
+* Parameters:
+*   int ret:
+*          return value from sscanf
+*   uint16_t bytes:
+*          how much bytes is correst
+*   char *otp_str:
+*          if error, printf the otp name
+*   char *otp_input:
+*          if error, printf the input otp string
+*
+* Return:
+*   bool
+*
+*******************************************************************************/
+static bool check_otp_info(int ret, uint16_t bytes, char *otp_str, char *otp_input)
+{
+    if (ret != bytes)
+    {
+        printf("ERROR: %s:%s\n", otp_str, otp_input);
+        return FALSE;
+    }
+    return TRUE;
+}
+
+/*******************************************************************************
+* Function Name: print_otp_info
+********************************************************************************
+* Summary: print the otp hex that prepare send to controller, 
+*          eg: input usb_vid 0x1122, but prepare hex here is 0x2211
+*          can check with cybluetool
+*
+* Parameters:
+*    char *str:
+*         print otp str name
+*    uint16_t size:
+*         bytes of otp
+*    uint16_t start:
+*         otp start index of buffer
+*    uint8_t *p
+*         otp byte buffer
+*    uint16_t buffersize:
+* Return:
+*    bool
+*/
+static bool print_otp_info(char *str, uint16_t size, uint16_t start, uint8_t *p, uint16_t buffersize)
+{
+    if (buffersize < start || buffersize < (start + size))
+    {
+        printf("[%s] Index ERROR: start index:%d size:%d buffersize:%d\n", str, start, size, buffersize);
+        return FALSE;
+    }
+    printf("[%s: ", str);
+    for (int i = 0; i < size; i++)
+    {
+        printf("%02x", p[start + i]);
+    }
+    printf("]\n");
+    return TRUE;
+}
 
 void proc_patchram(bool sendMini)
 {
-    int len;
-    if (sendMini == true) {
-    	UINT8 hci_download_minidriver[] = { 0x01, 0x2e, 0xfc, 0x00 };
-
-    	fprintf(stderr,"\n Sending Download minidriver \n", len);
-    	hci_send_cmd(hci_download_minidriver, sizeof(hci_download_minidriver));
-    	read_event(fd_transport, buffer);
+    int len = 0;
+    int start_seconds = 0, end_seconds = 0;
+    if (sendMini == true)
+    {
+        UINT8 hci_download_minidriver[] = { 0x01, 0x2e, 0xfc, 0x00 };
+        printf("\n Sending Download minidriver \n");
+        hci_send_cmd(hci_download_minidriver, sizeof(hci_download_minidriver));
+        read_event(fd_transport, buffer);
     } else {
-    	fprintf(stderr,"Skipping minidriver download \n", len);
+        printf("Skipping minidriver download \n");
     }
     int dot_print=0;
-
+    start_seconds = time((time_t*)NULL);
     if (is_hex)
     {
-        ssize_t len,i,data_len=0;
+        ssize_t len = 0, i = 0, data_len = 0;
         char *rbuf = NULL;
         size_t buflen;
         volatile unsigned int addr = 0;
@@ -561,7 +629,7 @@ void proc_patchram(bool sendMini)
                 break;
             type = hex_to_int(rbuf + 7);
             curr_len = hex_to_int(rbuf + 1);
-            printf("currlen %d type %d data_len %d dest_addr 0x%x \n",curr_len, type,data_len,dest_addr);
+            printf("currlen %zu type %d data_len %zu dest_addr 0x%x \n",curr_len, type,data_len,dest_addr);
             if (type == 0)
             {
                 offset_addr = lhex_to_int(rbuf + 3);
@@ -643,45 +711,51 @@ void proc_patchram(bool sendMini)
             temp_data[7] = launch_ram >> 24;
         }
         printf("Launch ram 0x%x",launch_ram);
-	debug = 0;
+	debug = FALSE;
         hci_send_cmd(temp_data, sizeof(temp_data));
         read_event(fd_transport, buffer);
-	debug = 1;
+	debug = TRUE;
 
         fclose(logfile);
     }
     else
     {
-	fprintf(stderr,"... hcd files ... \n", len);
+        printf("... hcd files ... \n");
         while( read(fd_hcdfile, &buffer[1], 3) )
         {
-        buffer[0] = 0x01;
+            buffer[0] = 0x01;
 
-        len = buffer[3];
+            len = buffer[3];
 
-        read(fd_hcdfile, &buffer[4], len);
+            read(fd_hcdfile, &buffer[4], len);
 
-	debug = 0;
-        hci_send_cmd(buffer, len + 4);
-        //read_event(fd_transport, buffer);
-	debug = 1;
-        dot_print++;
-	fprintf(stderr,".", len);
-
-        if (dot_print%100==0)
-        {
-        	fprintf(stderr,".\n", len);    
+            if (readEvent == true)
+            {
+                hci_send_cmd(buffer, len + 4);
+                read_event(fd_transport, buffer);
+            } else
+            {
+                debug = FALSE;
+                hci_send_cmd(buffer, len + 4);
+                read_event(fd_transport, buffer);
+                dot_print++;
+                if (dot_print % 5 == 0)
+                {
+                    fprintf(stderr, ".");
+                }
+            }
         }
-        }
+        debug = TRUE;
     }
-    fprintf(stderr,"\nExit proc_patchram %d \n", len);
+    end_seconds = time((time_t*)NULL);
+    printf("\nExit proc_patchram, cost:%d seconds\n", end_seconds - start_seconds);
 }
 
 void execute_download(char* file_name)
 {
     char* pathname = file_name;
 
-    fprintf(stderr,"Download BT firmware. This may take a few moments...\n", "\n");  
+    printf("Download BT firmware. This may take a few moments...\n");
 
     execute_reset();
 
@@ -693,14 +767,14 @@ void execute_download(char* file_name)
 
     execute_reset();
 
-    fprintf(stderr,"Current state: Completed successfully", "\n");
+    printf("Current state: Completed successfully");
 }
 
 void execute_download_with_minidriver(char* file_name)
 {
     char* pathname = file_name;
 
-    fprintf(stderr,"Download BT firmware. This may take a few moments...\n", "\n");  
+    printf("Download BT firmware. This may take a few moments...\n");  
 
     execute_reset();
 
@@ -708,11 +782,23 @@ void execute_download_with_minidriver(char* file_name)
 
     proc_patchram(true);
 
-    //init_uart(); //back to 115200
+    if (mbt_transport_type == TRANSPORT_TYPE_USB)
+    {
+        sleep(1);
+        close(fd_transport);
+        sleep(1);
+        fd_transport = open(mbt_transport, O_RDWR | O_NOCTTY);
+    }
+    else if (mbt_transport_type == TRANSPORT_TYPE_UART)
+    {
+        init_uart(); //back to 115200
+    }
+
+    sleep(1);
 
     execute_reset();
 
-    fprintf(stderr,"Current state: Completed successfully", "\n");
+    printf("Current state: Completed successfully\n");
 }
 
 
@@ -720,13 +806,11 @@ void execute_download_autobaud(char* file_name)
 {
     char* pathname = file_name;
 
-    cts_low_init();
+    cts_low_init(true);
 
     init_uart_change_baudrate(); //raise baudrate
 
-    fprintf(stderr,"Download BT firmware. This may take a few moments...", "\n");
-
-    //execute_reset();
+    printf("Download BT firmware. This may take a few moments...\n");
 
     wait_for_auto_baud();
 
@@ -740,21 +824,21 @@ void execute_download_autobaud(char* file_name)
 
     execute_reset();
 
-    fprintf(stderr,"Current state: Completed successfully", "\n");
+    printf("Current state: Completed successfully");
 }
 
-void execute_download_auto_threeM(char* file_name)
+void execute_download_auto_threeM(char* file_name, bool waitReset)
 {
     char* pathname = file_name;
 
-    cts_low_init();
+    cts_low_init(waitReset);
 
     init_uart_change_baudrate3M(); //raise baudrate
 
-    fprintf(stderr,"Download BT firmware. This may take a few moments...", "\n");
+    printf("Download BT firmware. This may take a few moments...\n");
 
     hci_send_cmd(enter_download_mode, sizeof(enter_download_mode));
-    
+
     read_event(fd_transport, buffer);
 
     parse_patchram(pathname);
@@ -767,7 +851,7 @@ void execute_download_auto_threeM(char* file_name)
 
     execute_reset();
 
-    fprintf(stderr,"Current state: Completed successfully", "\n");
+    printf("Current state: Completed successfully\n");
 }
 
 
@@ -775,15 +859,15 @@ void execute_download_no_reset(char* file_name)
 {
     char* pathname = file_name;
 
-    fprintf(stderr,"Download BT firmware. This may take a few moments...", "\n");
-    fprintf(stderr,"NO RESET DOWNLOAD", "\n");
+    printf("Download BT firmware. This may take a few moments...\n");
+    printf("NO RESET DOWNLOAD\n");
 
     parse_patchram(pathname);
 
     proc_patchram(false);
 
     //execute_reset();
-    fprintf(stderr,"Current state: Completed successfully", "\n");
+    printf("Current state: Completed successfully\n");
 }
 
 /*******************************************************************************
@@ -815,7 +899,7 @@ static void execute_download_threeM(char* file_name)
 
     printf("2. HCI Reset\n");
     hci_send_cmd(hci_reset, sizeof(hci_reset));
-    
+
     ret = read_event(fd_transport, buffer);
     if (ret > 3)
     {
@@ -876,10 +960,10 @@ void expired(int sig)
 
 void expired_auto_baud(int sig)
 {
-    debug=0;
+    debug = FALSE;
     hci_send_cmd(hci_reset, sizeof(hci_reset));
-    debug=1;
-    printf("\n\Please reset the chip to autobaud state!\n");
+    debug = TRUE;
+    printf("\nPlease reset the chip to autobaud state!\n");
     alarm(2);
 }
 
@@ -887,9 +971,9 @@ static void wait_for_auto_baud(void)
 {
     signal(SIGALRM, expired_auto_baud);
 	
-    debug=0;
+    debug = FALSE;
     hci_send_cmd(hci_reset, sizeof(hci_reset));
-    debug=1;
+    debug = TRUE;
 
     printf("\n\nPlease reset the chip to autobaud state!\n");
 
@@ -930,12 +1014,12 @@ static void execute_input_command(char *input)
     memset(&params, 0, sizeof(params));
     memset(&input_commands, 0, sizeof(input_commands));
 
-    printf("input=%s\ninput_length=%d\n", input, strlen(input));
+    printf("input=%s\ninput_length=%zu\n", input, strlen(input));
     
     int j = 0;
     for (int i = 0; i < strlen(input)/2; i++)
     {
-        sscanf(&input[j], "%02x", &params[i]);
+        sscanf(&input[j], "%02x", (int*)&params[i]);
         j = j + 2;
     }
 
@@ -952,8 +1036,6 @@ static void execute_input_command(char *input)
     hci_send_cmd(input_commands, sizeof(input_commands));
 
     read_event(fd_transport, buffer);
-
-    return 1;
 }
 
 static void execute_set_event_filter(void)
@@ -1115,6 +1197,205 @@ static void execute_le_transmitter_test(UINT16 tx_channel, UINT16 length, UINT16
     read_event(fd_transport, buffer);
 }
 
+
+/*******************************************************************************
+* Function Name: execute_access_otp_20703A1_write
+********************************************************************************
+* Summary:
+*   Implement OTP Write for 20703A1
+* Parameters:
+*   char *bd_addr
+*   char *license_key
+*   char *usb_vid
+*   char *usb_pid
+*   char *usb_desc_config
+*   char *led_config
+*   char *freq_trim
+*   char *output_power_trim
+*   char *radio_disable_config
+*   char *audio_config
+*   char *xial_freq
+*   char *misc_config1
+*   char *misc_config2
+*   char *clb_sh_bg_ctl_0bg_rcal_trim
+*   char *fab_config
+*   char *lpm_settings
+*   char *usb_ctrl_flags
+* Return:
+*   None
+*******************************************************************************/
+static void execute_access_otp_20703A1_write(char *bd_addr, char *license_key, char *usb_vid, char *usb_pid, char *usb_desc_config, char *led_config, char *freq_trim, char *output_power_trim, char *radio_disable_config, char *audio_config, char *xial_freq, char *misc_config1, char *misc_config2, char *clb_sh_bg_ctl_0bg_rcal_trim, char *fab_config, char *lpm_settings, char *usb_ctrl_flags)
+{
+    if (bd_addr == NULL || license_key == NULL || usb_pid == NULL || usb_vid == NULL || usb_desc_config == NULL || led_config == NULL || freq_trim == NULL 
+        || output_power_trim == NULL || radio_disable_config == NULL || audio_config == NULL || xial_freq == NULL || misc_config1 == NULL || misc_config2 == NULL
+        || clb_sh_bg_ctl_0bg_rcal_trim == NULL || fab_config == NULL || lpm_settings == NULL || usb_ctrl_flags == NULL)
+    {
+        printf("ERROR: execute_access_otp_20703A1_write parameter have NULL\n");
+        return;
+    }
+    UINT8 hci_access_otp_20703A1_write[] = { 0x01, 0xf3, 0xfc, 0x2a, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+    UINT8 *p = hci_access_otp_20703A1_write;
+    int ret = 0;
+    uint16_t buffersize = sizeof(hci_access_otp_20703A1_write);
+
+//1
+    ret = sscanf(bd_addr, "%02hhx %02hhx %02hhx %02hhx %02hhx %02hhx", &p[10], &p[9], &p[8], &p[7], &p[6], &p[5]);
+    if (check_otp_info(ret, otp_bytes_bd_addr, otp_str_bd_addr, bd_addr) == FALSE ||
+        print_otp_info(otp_str_bd_addr, otp_bytes_bd_addr, 5, p, buffersize) == FALSE)
+    {
+        return;
+    }
+
+//2
+    ret = sscanf(license_key, "%02hhx %02hhx %02hhx %02hhx %02hhx %02hhx %02hhx %02hhx %02hhx %02hhx %02hhx %02hhx %02hhx %02hhx %02hhx %02hhx", &p[11], &p[12], &p[13], &p[14], &p[15], &p[16], &p[17], &p[18], &p[19], &p[20], &p[21], &p[22], &p[23], &p[24], &p[25], &p[26]);
+    if (check_otp_info(ret, otp_bytes_license_key, otp_str_license_key, license_key) == FALSE ||
+        print_otp_info(otp_str_license_key, otp_bytes_license_key, 11, p, buffersize) == FALSE)
+    {
+        return;
+    }
+
+//3 2bytes
+    ret = sscanf(usb_vid, "%02hhx %02hhx", &p[28], &p[27]);
+
+    if (check_otp_info(ret, otp_bytes_usb_vid, otp_str_usb_vid, usb_vid) == FALSE ||
+        print_otp_info(otp_str_usb_vid, otp_bytes_usb_vid, 27, p, buffersize) == FALSE)
+    {
+        return;
+    }
+
+//4 2bytes
+    ret = sscanf(usb_pid, "%02hhx %02hhx", &p[30], &p[29]);
+    if (check_otp_info(ret, otp_bytes_usb_pid, otp_str_usb_pid, usb_pid) == FALSE ||
+        print_otp_info(otp_str_usb_pid, otp_bytes_usb_pid, 29, p, buffersize) == FALSE)
+    {
+        return;
+    }
+//5
+    ret = sscanf(usb_desc_config, "%02hhx", &p[31]);
+    if (check_otp_info(ret, otp_bytes_usb_desc_config, otp_str_usb_desc_config, usb_desc_config) == FALSE ||
+        print_otp_info(otp_str_usb_desc_config, otp_bytes_usb_desc_config, 31, p, buffersize) == FALSE)
+    {
+        return;
+    }
+//6
+    ret = sscanf(led_config, "%02hhx", &p[32]);
+    if (check_otp_info(ret, otp_bytes_led_config, otp_str_led_config, led_config) == FALSE ||
+        print_otp_info(otp_str_led_config, otp_bytes_led_config, 32, p, buffersize) == FALSE)
+    {
+        return;
+    }
+//7
+    ret = sscanf(freq_trim, "%02hhx", &p[33]);
+    if (check_otp_info(ret, otp_bytes_freq_trim, otp_str_freq_trim, freq_trim) == FALSE ||
+        print_otp_info(otp_str_freq_trim, otp_bytes_freq_trim, 33, p, buffersize) == FALSE)
+    {
+        return;
+    }
+//8
+    ret = sscanf(output_power_trim, "%02hhx", &p[34]);
+    if (check_otp_info(ret, otp_bytes_output_power_trim, otp_str_output_power_trim, output_power_trim) == FALSE ||
+        print_otp_info(otp_str_output_power_trim, otp_bytes_output_power_trim, 34, p, buffersize) == FALSE)
+    {
+        return;
+    }
+//9
+    ret = sscanf(radio_disable_config, "%02hhx", &p[35]);
+    if (check_otp_info(ret, otp_bytes_radio_disable_config, otp_str_radio_disable_config, radio_disable_config) == FALSE ||
+        print_otp_info(otp_str_radio_disable_config, otp_bytes_radio_disable_config, 35, p, buffersize) == FALSE)
+    {
+        return;
+    }
+
+//10
+    ret = sscanf(audio_config, "%02hhx", &p[36]);
+    if (check_otp_info(ret, otp_bytes_audio_config, otp_str_audio_config, audio_config) == FALSE ||
+        print_otp_info(otp_str_audio_config, otp_bytes_audio_config, 36, p, buffersize) == FALSE)
+    {
+        return;
+    }
+
+//11 2bytes
+    ret = sscanf(xial_freq, "%02hhx %02hhx", &p[38], &p[37]);
+    if (check_otp_info(ret, otp_bytes_xial_freq, otp_str_xial_freq, xial_freq) == FALSE ||
+        print_otp_info(otp_str_xial_freq, otp_bytes_xial_freq, 37, p, buffersize) == FALSE)
+    {
+        return;
+    }
+
+//12
+    ret = sscanf(misc_config1, "%02hhx", &p[39]);
+    if (check_otp_info(ret, otp_bytes_misc_config1, otp_str_misc_config1, misc_config1) == FALSE ||
+        print_otp_info(otp_str_misc_config1, otp_bytes_misc_config1, 39, p, buffersize) == FALSE)
+    {
+        return;
+    }
+
+//13
+    ret = sscanf(misc_config2, "%02hhx", &p[40]);
+    if (check_otp_info(ret, otp_bytes_misc_config2, otp_str_misc_config2, misc_config2) == FALSE ||
+        print_otp_info(otp_str_misc_config2, otp_bytes_misc_config2, 40, p, buffersize) == FALSE)
+    {
+        return;
+    }
+
+//14
+    ret = sscanf(clb_sh_bg_ctl_0bg_rcal_trim, "%02hhx", &p[41]);
+    if (check_otp_info(ret, otp_bytes_clb_sh_bg_ctl_0bg_rcal_trim, otp_str_clb_sh_bg_ctl_0bg_rcal_trim, clb_sh_bg_ctl_0bg_rcal_trim) == FALSE ||
+        print_otp_info(otp_str_clb_sh_bg_ctl_0bg_rcal_trim, otp_bytes_clb_sh_bg_ctl_0bg_rcal_trim, 41, p, buffersize) == FALSE)
+    {
+        return;
+    }
+
+//15
+    ret = sscanf(fab_config, "%02hhx", &p[42]);
+    if (check_otp_info(ret, otp_bytes_fab_config, otp_str_fab_config, fab_config) == FALSE ||
+        print_otp_info(otp_str_fab_config, otp_bytes_fab_config, 42, p, buffersize) == FALSE)
+    {
+        return;
+    }
+
+//16 2bytes
+    ret = sscanf(lpm_settings, "%02hhx %02hhx", &p[44], &p[43]);
+    if (check_otp_info(ret, otp_bytes_lpm_settingsmisc_config2, otp_str_lpm_settingsmisc_config2, lpm_settings) == FALSE ||
+        print_otp_info(otp_str_lpm_settingsmisc_config2, otp_bytes_lpm_settingsmisc_config2, 43, p, buffersize) == FALSE)
+    {
+        return;
+    }
+
+//17
+    ret = sscanf(usb_ctrl_flags, "%02hhx", &p[45]);
+    if (check_otp_info(ret, otp_bytes_usb_ctrl_flags, otp_str_usb_ctrl_flags, usb_ctrl_flags) == FALSE ||
+        print_otp_info(otp_str_usb_ctrl_flags, otp_bytes_usb_ctrl_flags, 45, p, buffersize) == FALSE)
+    {
+        return;
+    }
+
+    hci_send_cmd(hci_access_otp_20703A1_write, sizeof(hci_access_otp_20703A1_write));
+
+    read_event(fd_transport, buffer);
+}
+
+/*******************************************************************************
+* Function Name: execute_access_otp_20703A1_read
+********************************************************************************
+* Summary:
+*   Implement OTP Read for 20703A1
+* Parameters:
+*   None
+* Return:
+*   None
+*******************************************************************************/
+static void execute_access_otp_20703A1_read(void)
+{
+
+    UINT8 hci_access_otp_20703A1_read[] = { 0x01, 0xf3, 0xfc, 0x01, 0x09};
+
+    hci_send_cmd(hci_access_otp_20703A1_read, sizeof(hci_access_otp_20703A1_read));
+
+    read_event(fd_transport, buffer);
+}
+
+
 static void execute_set_tx_frequency_arm(BOOL carrier_on, int tx_frequency, int tx_mode, int tx_modulation_type, int tx_power_select, int tx_power_dBm_index)
 {
     INT8 hci_set_tx_frequency_arm[] = { 0x01, 0x014, 0xfc, 0x07, 0, 0, 0, 0, 0, 0, 0};
@@ -1203,6 +1484,21 @@ static void execute_radio_tx_test(char *bdaddr, int frequency, int modulation_ty
     read_event(fd_transport, buffer);
 }
 
+static void execute_end_radio_tx_test(void)
+{
+    signal(SIGALRM, expired);
+
+    hci_send_cmd(hci_reset, sizeof(hci_reset));
+
+    alarm(4);
+
+    read_event(fd_transport, buffer);
+    read_event(fd_transport, buffer);
+
+    alarm(0);
+
+    printf("stop tx_test.\n");
+}
 static void stop_rx_test(int sig)
 {
     UINT8 hci_reset[] = {0x01, 0x03, 0x0c, 0x00};
@@ -1293,7 +1589,7 @@ static void execute_radio_rx_test(char *bdaddr, int frequency, int modulation_ty
 static void execute_le_receiver_test_v3(UINT8 rx_channel, UINT8 phy)
 {
     UINT8 hci_le_rx_test_v3[] = { 0x01, 0x04F, 0x20, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-    UINT8 mod_idx, cte_length, cte_type, slot_duration, len_sw_pattern, ant_id;
+    UINT8 mod_idx = 0, cte_length = 0, cte_type = 0, slot_duration = 0, len_sw_pattern = 0, ant_id = 0;
     printf("[rx_channel:%d phy:%d modulation_index:%d]\n", rx_channel, phy, mod_idx);
 
     mod_idx = 0;         // 0 for standard modulation, 1 for stable modulation
@@ -1461,6 +1757,24 @@ int main (int argc, char **argv)
         execute_reset();
         break;
 
+    case COMMAND_ACCESS_OTP_20703A1_READ:
+        execute_access_otp_20703A1_read();
+        break;
+
+    case COMMAND_ACCESS_OTP_20703A1_WRITE:
+    {
+        int i = 0;
+        for (i = 2; i < argc; i++)
+        {
+            if (is_str_valid_hex(argv[i]) != TRUE)
+            {
+                printf("Invalid Input:%s\n", argv[i]);
+                goto END;
+            }
+        }
+        execute_access_otp_20703A1_write(argv[2], argv[3],argv[4], argv[5], argv[6], argv[7],argv[8], argv[9], argv[10], argv[11],argv[12], argv[13], argv[14], argv[15],argv[16], argv[17], argv[18]);
+    }
+        break;
     case COMMAND_LOOPBACK_MODE:
         execute_loopback_mode();
         break;
@@ -1476,7 +1790,15 @@ int main (int argc, char **argv)
     case COMMAND_DOWNLOAD_AUTOBAUD:
         execute_download_autobaud(argv[2]);
         break;
-
+    case COMMAND_DOWNLOAD_WITH_MINIDRIVER:
+        execute_download_with_minidriver(argv[2]);
+        break;
+    case COMMAND_DOWNLOAD_AUTOBAUD_3M:
+        execute_download_auto_threeM(argv[2], true);
+        break;
+    case COMMAND_DOWNLOAD_SOFT_3M:
+        execute_download_threeM(argv[2]);
+        break;
     case COMMAND_WRITE_BDADDR:
         execute_write_bdaddr(argv[2]);
         break;
@@ -1519,6 +1841,10 @@ int main (int argc, char **argv)
 
     case COMMAND_TX_TEST:
         execute_radio_tx_test(argv[2], atoi(argv[3]), atoi(argv[4]), atoi(argv[5]), atoi(argv[6]), atoi(argv[7]), atoi(argv[8]), atoi(argv[9]));
+        break;
+
+    case COMMAND_END_TX_TEST:
+        execute_end_radio_tx_test();
         break;
 
     case COMMAND_RX_TEST:
@@ -1564,22 +1890,11 @@ int main (int argc, char **argv)
         break;
     case COMMAND_ARG_MISMATCH:
         break;
-    case COMMAND_DOWNLOAD_WITH_MINIDRIVER:
-        execute_download_with_minidriver(argv[2]);
-        break;
-    case COMMAND_DOWNLOAD_AUTOBAUD_3M:
-        execute_download_auto_threeM(argv[2]);
-        break;
-    case COMMAND_DOWNLOAD_SOFT_3M:
-        execute_download_threeM(argv[2]);
-        break;
-
     default:
         break;
     }
-
+END:
     printf("\n");
     close(fd_transport);
     exit(EXIT_SUCCESS);
 }
-

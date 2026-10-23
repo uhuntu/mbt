@@ -58,6 +58,44 @@ extern "C" {
 #define TRUE   (!FALSE)
 #endif
 
+//otp_str 20703A1
+#define otp_str_bd_addr              "bd_addr"
+#define otp_str_license_key          "license_key"
+#define otp_str_usb_vid              "usb_vid"
+#define otp_str_usb_pid              "usb_pid"
+#define otp_str_usb_desc_config      "usb_desc_config"
+#define otp_str_led_config           "led_config"
+#define otp_str_freq_trim            "freq_trim"
+#define otp_str_output_power_trim    "output_power_trim"
+#define otp_str_radio_disable_config "radio_disable_config"
+#define otp_str_audio_config         "audio_config"
+#define otp_str_xial_freq            "xial_freq"
+#define otp_str_misc_config1         "misc_config1"
+#define otp_str_misc_config2         "misc_config2"
+#define otp_str_clb_sh_bg_ctl_0bg_rcal_trim    "clb_sh_bg_ctl_0bg_rcal_trim"
+#define otp_str_fab_config                     "fab_config"
+#define otp_str_lpm_settingsmisc_config2       "lpm_settingsmisc_config2"
+#define otp_str_usb_ctrl_flags       "usb_ctrl_flags"
+
+//otp_bytes 20703A1
+#define otp_bytes_bd_addr                        6U
+#define otp_bytes_license_key                   16U
+#define otp_bytes_usb_vid                        2U
+#define otp_bytes_usb_pid                        2U
+#define otp_bytes_usb_desc_config                1U
+#define otp_bytes_led_config                     1U
+#define otp_bytes_freq_trim                      1U
+#define otp_bytes_output_power_trim              1U
+#define otp_bytes_radio_disable_config           1U
+#define otp_bytes_audio_config                   1U
+#define otp_bytes_xial_freq                      2U
+#define otp_bytes_misc_config1                   1U
+#define otp_bytes_misc_config2                   1U
+#define otp_bytes_clb_sh_bg_ctl_0bg_rcal_trim    1U
+#define otp_bytes_fab_config                     1U
+#define otp_bytes_lpm_settingsmisc_config2       2U
+#define otp_bytes_usb_ctrl_flags                 1U
+
 typedef unsigned char   UINT8;
 typedef unsigned char   UBYTE;
 typedef unsigned short  UINT16;
@@ -69,7 +107,7 @@ typedef UINT32          TIME_STAMP;
 typedef unsigned char   BOOL;
 
 
-#define MBT_VERSION_STRING "ver 1.32.0 (MBT for Linux)"
+#define MBT_VERSION_STRING "ver 2.11 (MBT for Linux)"
 #define MBT_MAX_TX_POWER 3 // 3dBm max
 #define CRTSCTS 020000000000 /*flow control*/
 #define COMPARE_STRING(x,y)     strcmp(x,y)
@@ -106,6 +144,7 @@ enum
     COMMAND_SET_TX_FREQUENCY_ARM,
     COMMAND_RECEIVE_ONLY,
     COMMAND_TX_TEST,
+    COMMAND_END_TX_TEST,
     COMMAND_RX_TEST,
     COMMAND_INPUT_COMMAND,
     COMMAND_READ_NAME,
@@ -119,6 +158,8 @@ enum
     COMMAND_OTP_WRITE_WORD,
     COMMAND_DOWNLOAD_MINIDRIVER,
     COMMAND_MISMATCH = 80,
+    COMMAND_ACCESS_OTP_20703A1_READ,
+    COMMAND_ACCESS_OTP_20703A1_WRITE,
     COMMAND_DOWNLOAD_WITH_MINIDRIVER,
     COMMAND_DOWNLOAD_AUTOBAUD_3M,
     COMMAND_DOWNLOAD_SOFT_3M,

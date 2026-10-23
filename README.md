@@ -5,8 +5,13 @@
 
 ## Version
 ```
-  1.32.0
+  2.11 (files supplied by Jia Hu)
 ```
+
+This branch contains the unmodified `mbt.c`, `mbt.h` and `mbt_common.c`
+provided by Jia Hu for Infineon case IFX-260818-2262707. See
+[JIA_SOURCE.md](JIA_SOURCE.md) for provenance and test conditions.
+
 
 ## Requirements
 
